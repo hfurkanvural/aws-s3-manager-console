@@ -3,22 +3,48 @@
 }  
 <h2>@ViewBag.Title.</h2>  
 <h3>@ViewBag.Message</h3>  
-  
-<p>Use this area to browse image and upload to S3 bucket.</p> 
-
-<form method="post" asp-action="uploadFile" asp-controller="Home" enctype="multipart/form-data">
-    <input type="file" name="file" />
-    <input type="submit" value="upload"/>
+<h4>Versioning Status: @Model.VersioningStatus</h4>
+<form asp-action="enableVersioning" method="post">
+    <button type="submit" class="btn btn-sm btn-primary" onclick="return confirm('Are you sure you want to change versioning status?');">
+        Enable/Disable
+    </button>
 </form>
 
 <div>
-    @foreach (var image in Model)
-    {
-        //Your logic here eg:
-        <img class="img" src="@image" />
-        
-    }
+    <table class="table table-image table-bordered table-dark">
+        <thead>
+            <tr>
+                <th scope="col">Image</th>
+                <th scope="col">Delete</th>
+            </tr>
+        </thead>
+        <tbody>
+            @foreach (var item in Model.Objects)
+            {
+                //Your logic here eg:
+                <tr>
+                    <td>
+                        <img class="img-thumbnail" src="@item.imgUrl"/>
+                    </td>
+                    <td>
+                        <form asp-action="deleteObject" asp-route-id="@item.keyName" method="post">
+                            <button type="submit" class="btn btn-sm btn-danger" onclick="return confirm('Are you sure you want to delete @item.keyName?');">
+                                Delete
+                            </button>
+                        </form>
+                    </td>
+                </tr>
+                                
+            }
+        </tbody>
+    </table>
+</div>
 
+<div>
+    <form method="post" asp-action="uploadObject" asp-controller="Home" enctype="multipart/form-data">
+    <input type="file" name="file" />
+    <input type="submit" value="upload"/>
+</form>
 </div>
 
 
