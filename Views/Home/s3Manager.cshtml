@@ -15,6 +15,8 @@
         <thead>
             <tr>
                 <th scope="col">Image</th>
+                <th scope="col">File Name</th>
+                <th scope="col">Versions</th>
                 <th scope="col">Delete</th>
             </tr>
         </thead>
@@ -25,6 +27,18 @@
                 <tr>
                     <td>
                         <img class="img-thumbnail" src="@item.imgUrl"/>
+                    </td>
+                    <td>
+                        @item.keyName
+                    </td>
+                    <td>
+                        <ul>
+                        @foreach (var version in item.versions)
+                        {
+                            <li>@version.VersionId \n @version.LastModified</li>
+                        }
+                        </ul>
+
                     </td>
                     <td>
                         <form asp-action="deleteObject" asp-route-id="@item.keyName" method="post">

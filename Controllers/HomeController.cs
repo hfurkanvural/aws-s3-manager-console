@@ -43,23 +43,8 @@ namespace s3_example.Controllers
 
             using (var client = new AmazonS3Client(s3config.accesskey, s3config.secretkey, s3config.bucketRegion))
             {
-                ListObjectsV2Request request = new ListObjectsV2Request{
-                    BucketName = s3config.bucketName,
-                    MaxKeys = 10
-                };
-                ListObjectsV2Response response;
-
-                response = await client.ListObjectsV2Async(request);
-                foreach (S3Object entry in response.S3Objects)
-                {
-                    S3Obj tempObj = new S3Obj();
-                    tempObj.keyName= entry.Key;
-                    tempObj.imgUrl= s3config.url + entry.Key;
-
-                    Objects.Add(tempObj);
-                }
-                
-                viewModel.Objects = Objects;
+                await GetS3ObjectswithVersions(client);
+                viewModel.Objects = await GetS3Objects(client);
                 viewModel.VersioningStatus = await RetrieveBucketVersioningConfiguration(client);
             }
 
@@ -143,6 +128,51 @@ namespace s3_example.Controllers
             GetBucketVersioningResponse response = await client.GetBucketVersioningAsync(request);
            
             return response.VersioningConfig.Status;    
+        }
+
+        public async Task<List<S3Obj>> GetS3Objects(AmazonS3Client client)
+        {
+            List<S3Obj> Objects =  new List<S3Obj>();
+            ListObjectsV2Request request = new ListObjectsV2Request{
+                    BucketName = s3config.bucketName,
+                    MaxKeys = 100
+                };
+            ListObjectsV2Response response = await client.ListObjectsV2Async(request);
+
+            List<S3ObjectVersion> versions = await GetS3ObjectswithVersions(client);
+
+            foreach (S3Object entry in response.S3Objects)
+            {
+                S3Obj tempObj = new S3Obj();
+                tempObj.keyName= entry.Key;
+                tempObj.imgUrl= s3config.url + entry.Key;
+                tempObj.versions = versions.FindAll(element => element.Key.Equals(entry.Key));
+                Console.WriteLine("----------------------------");
+                foreach (S3ObjectVersion i in tempObj.versions)
+                {
+                    Console.WriteLine("key = {0} size = {1} id = {2}",
+                        i.Key, i.Size, i.VersionId);
+                }
+                Objects.Add(tempObj);
+            }
+            return Objects;
+        }
+
+        public async Task<List<S3ObjectVersion>> GetS3ObjectswithVersions(AmazonS3Client client)
+        {
+            ListVersionsRequest request = new ListVersionsRequest()
+            {
+                BucketName = s3config.bucketName,
+                MaxKeys = 100
+            };
+            ListVersionsResponse response = await client.ListVersionsAsync(request); 
+
+            foreach (S3ObjectVersion entry in response.Versions)
+            {
+                Console.WriteLine("key = {0} size = {1} id = {2}",
+                    entry.Key, entry.Size, entry.VersionId);
+            }
+            return response.Versions;
         }
 
         [ResponseCache(Duration = 0, Location = ResponseCacheLocation.None, NoStore = true)]
