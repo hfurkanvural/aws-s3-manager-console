@@ -1,64 +1,106 @@
 @{  
-    ViewBag.Title = "Upload a file to S3 Bucket";  
+    ViewBag.Title = "AWS S3 Managing Panel";  
 }  
-<h2>@ViewBag.Title.</h2>  
-<h3>@ViewBag.Message</h3>  
-<h4>Versioning Status: @Model.VersioningStatus</h4>
-<form asp-action="enableVersioning" method="post">
-    <button type="submit" class="btn btn-sm btn-primary" onclick="return confirm('Are you sure you want to change versioning status?');">
-        Enable/Disable
-    </button>
-</form>
 
-<div>
-    <table class="table table-image table-bordered table-dark">
-        <thead>
-            <tr>
-                <th scope="col">Image</th>
-                <th scope="col">File Name</th>
-                <th scope="col">Versions</th>
-                <th scope="col">Delete</th>
-            </tr>
-        </thead>
-        <tbody>
-            @foreach (var item in Model.Objects)
-            {
-                //Your logic here eg:
-                <tr>
-                    <td>
-                        <img class="img-thumbnail" src="@item.imgUrl"/>
-                    </td>
-                    <td>
-                        @item.keyName
-                    </td>
-                    <td>
-                        <ul>
-                        @foreach (var version in item.versions)
-                        {
-                            <li>@version.VersionId \n @version.LastModified</li>
-                        }
-                        </ul>
+<h2>@ViewBag.Title</h2>  
+<h3>@ViewBag.Message</h3> 
 
-                    </td>
-                    <td>
-                        <form asp-action="deleteObject" asp-route-id="@item.keyName" method="post">
-                            <button type="submit" class="btn btn-sm btn-danger" onclick="return confirm('Are you sure you want to delete @item.keyName?');">
-                                Delete
+<div class="container">
+    <div class="row" style="margin-top:20px;">
+        <div class="col-sm-12">
+            <div class="card" style="height: 100%;">
+                <div class="card-body">
+                    <h5 class="card-title">S3 Bucket Versioning</h5>
+                    <p class="card-text">Current Versioning Status: @Model.VersioningStatus</p>
+                    <form asp-action="enableVersioning" method="post">
+
+                            <button type="submit" class="btn btn-sm btn-primary" onclick="return confirm('Are you sure you want to change versioning status?');">
+                                Enable/Suspend
                             </button>
-                        </form>
-                    </td>
-                </tr>
-                                
-            }
-        </tbody>
-    </table>
-</div>
 
-<div>
-    <form method="post" asp-action="uploadObject" asp-controller="Home" enctype="multipart/form-data">
-    <input type="file" name="file" />
-    <input type="submit" value="upload"/>
-</form>
+                    </form>          
+                </div>
+            </div>
+        </div>
+    </div>
+    <div class="row" style=" margin-top:20px; margin-bottom:50px;">
+        <div class="col-sm-12">
+            <div class="card" style="height: 100%;">
+                <div class="card-body">
+                    <h5 class="card-title">File Uploader</h5>
+                    <p class="card-text">Click below to choose file.</p>
+                    <form method="post" asp-action="uploadObject" asp-controller="Home" enctype="multipart/form-data">
+                        <div class="form-check">
+                            <input type="checkbox" class="form-check-input" name="encryptionEnabled" value="true" id="encryptionId" />
+                            <label class="form-check-label" for="inputCheckbox">Enable Encryption</label>
+                        </div>
+                        <div class="input-group mb-3">
+                            <div class="custom-file">
+                                <input type="file" class="custom-file-input" name="file">
+                                <label class="custom-file-label" for="inputGroupFile02" aria-describedby="inputGroupFileAddon02">Choose file</label>
+                            </div>
+                            <div class="input-group-append">
+                                <input class="input-group-text" type="submit" value="Upload"/>
+                            </div>
+                        </div>
+                    </form>
+                </div>
+            </div>
+        </div>
+    </div>
+ 
+
+
+    <div class="row align-items-center">
+        <h4>Bucket Objects</h4>
+        <table class="table table-image table-bordered table-dark">
+            <thead>
+                <tr>
+                    <th scope="col">Image</th>
+                    <th scope="col">File Name</th>
+                    <th scope="col">Versions</th>
+                    <th scope="col">Delete</th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var item in Model.Objects)
+                {
+                    //Your logic here eg:
+                    <tr>
+                        <td align="center" style="vertical-align: middle;">
+                            <img class="img-thumbnail" src="@item.imgUrl"/>
+                        </td>
+                        <td  style="vertical-align: middle;">
+                            @item.keyName
+                        </td>
+                        <td>
+                            <ul class="list-unstyled">
+                                @foreach (var version in item.versions)
+                                {
+                                    <li class="media">
+                                        <img class="img-thumbnail mr-3" style="width: 80px;" src="@item.imgUrl?versionId=@version.VersionId" alt="alt text">
+                                        <div class="media-body">
+                                            <h7 class="mt-0 mb-1">Date Uploaded: @version.LastModified</h7>
+                                            <p>VersionId: @version.VersionId </p>
+                                        </div>
+                                    </li>
+                                }
+                            </ul>
+
+                        </td>
+                        <td>
+                            <form asp-action="deleteObject" asp-route-id="@item.keyName" method="post">
+                                <button type="submit" class="btn btn-sm btn-danger" onclick="return confirm('Are you sure you want to delete @item.keyName?');">
+                                    Delete
+                                </button>
+                            </form>
+                        </td>
+                    </tr>
+                                    
+                }
+            </tbody>
+        </table>
+    </div>
 </div>
 
 

@@ -2,9 +2,8 @@
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Linq;
+using System.IO;
 using System.Threading.Tasks;
-using System.IO;  
-using System.Web; 
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Logging;
@@ -51,24 +50,27 @@ namespace s3_example.Controllers
             
             return View(viewModel);
         }  
-        public async Task<IActionResult> uploadObject (IFormFile file)
+        public async Task<IActionResult> uploadObject (IFormFile file, bool encryptionEnabled = false)
         {
+            Console.WriteLine(encryptionEnabled);
             using (var client = new AmazonS3Client(s3config.accesskey, s3config.secretkey, s3config.bucketRegion))
             {
+                
                 using (var newMemoryStream = new MemoryStream())
                 {
-                    file.CopyTo(newMemoryStream);
-
-                    var uploadRequest = new TransferUtilityUploadRequest
+                    file.OpenReadStream().CopyTo(newMemoryStream);
+                    PutObjectRequest putObj = new PutObjectRequest()
                     {
-                        InputStream = newMemoryStream,
-                        Key = file.FileName,
                         BucketName = s3config.bucketName,
+                        Key = file.FileName,
+                        ContentType = file.ContentType,
+                        InputStream = newMemoryStream,
                         CannedACL = S3CannedACL.PublicRead
                     };
-
-                    var fileTransferUtility = new TransferUtility(client);
-                    await fileTransferUtility.UploadAsync(uploadRequest);
+                    if(encryptionEnabled)
+                        putObj.ServerSideEncryptionMethod = ServerSideEncryptionMethod.AES256;
+                        
+                    await client.PutObjectAsync(putObj);
                 }
             }
             return RedirectToAction(nameof(s3Manager));
@@ -147,12 +149,6 @@ namespace s3_example.Controllers
                 tempObj.keyName= entry.Key;
                 tempObj.imgUrl= s3config.url + entry.Key;
                 tempObj.versions = versions.FindAll(element => element.Key.Equals(entry.Key));
-                Console.WriteLine("----------------------------");
-                foreach (S3ObjectVersion i in tempObj.versions)
-                {
-                    Console.WriteLine("key = {0} size = {1} id = {2}",
-                        i.Key, i.Size, i.VersionId);
-                }
                 Objects.Add(tempObj);
             }
             return Objects;
@@ -166,12 +162,6 @@ namespace s3_example.Controllers
                 MaxKeys = 100
             };
             ListVersionsResponse response = await client.ListVersionsAsync(request); 
-
-            foreach (S3ObjectVersion entry in response.Versions)
-            {
-                Console.WriteLine("key = {0} size = {1} id = {2}",
-                    entry.Key, entry.Size, entry.VersionId);
-            }
             return response.Versions;
         }
 
