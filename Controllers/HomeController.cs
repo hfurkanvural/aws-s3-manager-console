@@ -240,6 +240,36 @@ namespace s3_example.Controllers
 
             return RedirectToAction(nameof(s3Manager));
         }
+
+        public async Task<IActionResult> DeleteTable(string id)
+        {
+
+            AmazonDynamoDBClient client =  new AmazonDynamoDBClient(s3config.accesskey, s3config.secretkey, s3config.bucketRegion);
+            DeleteTableRequest request = new DeleteTableRequest
+            {
+                TableName = id
+            };
+
+            var response = await client.DeleteTableAsync(request);
+            
+            var tableDescription = response.TableDescription;
+
+            string status = tableDescription.TableStatus;
+
+            Console.WriteLine(id + " - " + status);
+
+            var res = await client.DescribeTableAsync(new DescribeTableRequest
+            {
+                TableName = id
+            });
+            Console.WriteLine("Table name: {0}, status: {1}", res.Table.TableName,
+                      res.Table.TableStatus);
+            status = res.Table.TableStatus;
+      
+            WaitUntilTableReady(client, id);
+
+            return RedirectToAction(nameof(s3Manager));
+        }
         
         public async Task<List<string>> GetTableNames(AmazonDynamoDBClient client)
         {
