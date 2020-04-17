@@ -8,7 +8,10 @@ namespace s3_example.Models
     {
         public string keyName {get; set;}
         public string imgUrl {get; set;}
+        public long size {get; set;}
+        public DateTime uploadDate {get; set;}
         public List<S3ObjectVersion> versions {get; set;}
+        public S3DbInfo Data {get; set;}
     }
 }
 
