@@ -30,7 +30,7 @@
                 <div class="card-body">
                     <h5 class="card-title">File Uploader</h5>
                     <p class="card-text">Click below to choose file.</p>
-                    <form method="post" asp-action="uploadObject" asp-controller="Home" enctype="multipart/form-data" asp-route-id="@Model">
+                    <form method="post" asp-action="uploadObject" asp-controller="Home" enctype="multipart/form-data" asp-route-id="@Model.tableName">
                         <div class="input-group mb-3">
                             <div class="form-check">
                                 <input type="checkbox" class="form-check-input" name="encryptionEnabled" value="true" id="encryptionId" />
@@ -151,7 +151,7 @@
                                            UploadDate: @item.Data.uploadDate
                                        </li>
                                        <li>
-                                           Versions: @item.Data.versions
+                                           LastVersion: @item.Data.versions[0]
                                        </li>
 
                                    </ul>

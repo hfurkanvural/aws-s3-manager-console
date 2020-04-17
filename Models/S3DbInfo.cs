@@ -10,7 +10,7 @@ namespace s3_example.Models
         public string imgUrl {get; set;}
         public string extension {get; set;}
         public int size {get; set;}
-        public DateTime uploadDate{get; set;} 
+        public string uploadDate{get; set;} 
         public List<string> versions {get; set;}
         
     }

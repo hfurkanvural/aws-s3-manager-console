@@ -70,9 +70,10 @@ namespace s3_example.Controllers
 
             return View(viewModel);
         }  
-        public async Task<IActionResult> uploadObject (IFormFile file,  S3ManagerViewModel viewModel, bool encryptionEnabled = false)
+        public async Task<IActionResult> uploadObject (IFormFile file,  string id, bool encryptionEnabled = false)
         {
-            
+            int idx = -1;
+            S3ManagerViewModel viewModel = new S3ManagerViewModel();
             using (var client = new AmazonS3Client(s3config.accesskey, s3config.secretkey, s3config.bucketRegion))
             {
                 
@@ -90,11 +91,68 @@ namespace s3_example.Controllers
                     if(encryptionEnabled)
                         putObj.ServerSideEncryptionMethod = ServerSideEncryptionMethod.AES256;
                         
+                    viewModel.Objects = await GetS3Objects(client);
+                    viewModel.VersioningStatus = await RetrieveBucketVersioningConfiguration(client);
+                    viewModel.tableName = id;
                     await client.PutObjectAsync(putObj);
+                    Console.WriteLine("\n\n\nTable name: {0} and {1}\n\n\n\n\n\n", viewModel.tableName, id);
+                    idx = viewModel.Objects.FindIndex(element => element.keyName == file.FileName);
+                    viewModel.Objects = await GetS3Objects(client);
                 }
-                if(viewModel.Objects == null)
-                {} 
             }
+             
+            if(idx != -1 & viewModel.tableName != null)
+            {
+                S3Obj obj = viewModel.Objects[idx];
+                Console.WriteLine("Object is already defined! {0}", obj.keyName);
+                AmazonDynamoDBClient client =  new AmazonDynamoDBClient(s3config.accesskey, s3config.secretkey, s3config.bucketRegion);
+
+                List<string> vers = new List<string>();
+                foreach(var version in obj.versions)
+                    vers.Add(version.VersionId);
+
+                Dictionary<string, AttributeValue> key = new Dictionary<string, AttributeValue>
+                {
+                    { "ObjectKey", new AttributeValue { S = obj.keyName } }
+                };
+                 
+                Dictionary<string, AttributeValueUpdate> updates = new Dictionary<string, AttributeValueUpdate>();
+
+                updates["Size"] = new AttributeValueUpdate()
+                {
+                    Action = AttributeAction.PUT,
+                    Value = new AttributeValue { N = obj.size.ToString() }
+                };
+                                updates["Size"] = new AttributeValueUpdate()
+                {
+                    Action = AttributeAction.PUT,
+                    Value = new AttributeValue { N = obj.size.ToString() }
+                };
+
+                updates["UploadDate"] = new AttributeValueUpdate()
+                {
+                    Action = AttributeAction.PUT,
+                    Value = new AttributeValue { S =obj.uploadDate.ToString() }
+                };
+
+                updates["Versions"] = new AttributeValueUpdate()
+                {
+                    Action = AttributeAction.PUT,
+                    Value = new AttributeValue { SS = vers }
+                };
+                 
+                UpdateItemRequest req = new UpdateItemRequest
+                {
+                    TableName = viewModel.tableName,
+                    Key = key,
+                    AttributeUpdates = updates
+                };
+                
+                UpdateItemResponse resp = await client.UpdateItemAsync(req);
+
+                Console.WriteLine("response : {0} \nstatusCode: {1}", resp.ResponseMetadata, resp.HttpStatusCode);
+
+            } 
             return RedirectToAction(nameof(s3Manager));
         }
 
@@ -190,9 +248,6 @@ namespace s3_example.Controllers
         }
         public async Task<IActionResult> CreateTable(string tableName)
         {
-            Console.Write("\n\n\n\n\n***************");
-            Console.Write(tableName);
-            Console.Write("\n\n\n\n\n***************");
             AmazonDynamoDBClient client =  new AmazonDynamoDBClient(s3config.accesskey, s3config.secretkey, s3config.bucketRegion);
             //string tableName = "TestTable";
 
@@ -302,19 +357,17 @@ namespace s3_example.Controllers
                     Document document = await table.GetItemAsync(item.keyName);
                     if (document == null)
                     {
-                        Console.WriteLine("Error: product " + item.keyName + " does not exist");
+                        Console.WriteLine("product " + item.keyName + " does not exist");
                         S3Obj obj = viewModel.Objects.Find(element => element.keyName == item.keyName);
                         document = await uploadItem(table, obj);
                     }
-
-                    PrintDocument(document);
                     
                     S3DbInfo dbinfo = new S3DbInfo();
                     dbinfo.keyName = document["ObjectKey"];
                     dbinfo.imgUrl = document["ImgUrl"];
                     dbinfo.extension = document["Extension"];
                     dbinfo.size = document["Size"].AsInt();
-                    dbinfo.uploadDate = document["UploadDate"].AsDateTime();
+                    dbinfo.uploadDate = document["UploadDate"];
                     dbinfo.versions = document["Versions"].AsListOfString();
 
                     item.Data = dbinfo;
