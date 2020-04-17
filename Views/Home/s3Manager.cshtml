@@ -3,7 +3,7 @@
 }  
 
 <h2>@ViewBag.Title</h2>  
-<h3>@ViewBag.Message</h3> 
+<p>@ViewBag.Message</p> 
 
 <div class="container">
     <div class="row" style="margin-top:20px;">
@@ -30,7 +30,7 @@
                 <div class="card-body">
                     <h5 class="card-title">File Uploader</h5>
                     <p class="card-text">Click below to choose file.</p>
-                    <form method="post" asp-action="uploadObject" asp-controller="Home" enctype="multipart/form-data">
+                    <form method="post" asp-action="uploadObject" asp-controller="Home" enctype="multipart/form-data" asp-route-id="@Model">
                         <div class="input-group mb-3">
                             <div class="form-check">
                                 <input type="checkbox" class="form-check-input" name="encryptionEnabled" value="true" id="encryptionId" />
@@ -51,26 +51,42 @@
             </div>
         </div>
     </div>
-    @if(Model.tableName == null)
-    {
+    
     <div class="row" style=" margin-top:20px; margin-bottom:50px;">
         <div class="col-sm-12">
             <div class="card" style="height: 100%;">
-                <div class="card-body">
-                    <h5 class="card-title">Table Creator</h5>
-                    <p class="card-text">You need to create a table to store object data.</p>
-                    <p class="card-text">Enter Table Name</p>
-                    <form method="post" asp-action="CreateTable" asp-controller="Home" class="form-inline">
-                        <div class="input-group mb-3">
-                            <input type="text" class="form-control" name="tableName" placeholder="S3Manager">
-                        </div>
-                        <button type="submit" class="btn btn-primary mb-2">Create Table</button>
-                    </form>
-                </div>
+                
+                @if(Model.tableName == null)
+                {
+                    <div class="card-body">
+                        <h5 class="card-title">Table Creator</h5>
+                        <p class="card-text">You need to create a table to store object data.</p>
+                        <p class="card-text">Enter Table Name</p>
+                        <form method="post" asp-action="CreateTable" asp-controller="Home" class="form-inline">
+                            <div class="input-group mb-3">
+                                <input type="text" class="form-control" name="tableName" placeholder="S3Manager">
+                            </div>
+                            <button type="submit" class="btn btn-primary mb-2">Create Table</button>
+                        </form>
+                    </div>
+                }
+                else
+                {
+                    <div class="card-body">
+                        <h5 class="card-title">Table Info</h5>
+                        <p class="card-text">Your S3 Bucket is using <strong>"@Model.tableName"</strong> table to store object data.</p>
+                        <form method="post" asp-action="DeleteTable" asp-controller="Home" class="form-inline" asp-route-id="@Model.tableName">
+                            <button type="submit" class="btn btn-primary mb-2">Delete Table</button>
+                        </form>
+                    </div>
+                    <div class="card-footer text-muted">
+                        Click button to delete table.
+                    </div>
+                }
             </div>
         </div>
     </div>
-    }
+    
 
     <div class="row align-items-center">
         <h4>Bucket Objects</h4>
@@ -78,7 +94,7 @@
             <thead>
                 <tr>
                     <th scope="col">Image</th>
-                    <th scope="col">File Name</th>
+                    @if(Model.tableName == null){<th scope="col">File Name</th>}
                     <th scope="col">Versions</th>
                     <th scope="col">Stored Data</th>
                     <th scope="col">Delete</th>
@@ -92,9 +108,11 @@
                         <td align="center" style="vertical-align: middle;">
                             <img class="img-thumbnail" src="@item.imgUrl"/>
                         </td>
-                        <td  style="vertical-align: middle;">
-                            @item.keyName
-                        </td>
+                        @if(Model.tableName == null){
+                            <td  style="vertical-align: middle;">
+                                @item.keyName
+                            </td>
+                        }
                         <td>
                             <ul class="list-unstyled">
                                 @foreach (var version in item.versions)
@@ -116,11 +134,31 @@
                                 
                                 @if(item.Data != null)
                                 {
-                                   <p>yes deytaaaa;</p>
+                                   <ul>
+                                       <li>
+                                           ObjectName: @item.Data.keyName
+                                       </li>
+                                       <li>
+                                           Url: @item.Data.imgUrl
+                                       </li>
+                                       <li>
+                                           Extension: @item.Data.extension
+                                       </li>
+                                       <li>
+                                           Size: @item.Data.size
+                                       </li>
+                                       <li>
+                                           UploadDate: @item.Data.uploadDate
+                                       </li>
+                                       <li>
+                                           Versions: @item.Data.versions
+                                       </li>
+
+                                   </ul>
                                 }
                                 else
                                 {
-                                    <p>no deytaaaaa</p>
+                                    <p>No data found for this object!</p>
                                 }
                             }
                             else

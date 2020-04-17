@@ -49,18 +49,30 @@ namespace s3_example.Controllers
                 viewModel.VersioningStatus = await RetrieveBucketVersioningConfiguration(client);
             }
             AmazonDynamoDBClient dbclient = new AmazonDynamoDBClient(s3config.accesskey, s3config.secretkey, s3config.bucketRegion);
-            viewModel.tableName = await GetTableName(dbclient);
+            List<string> tableNames = await GetTableNames(dbclient);
             
-            if (viewModel.tableName != null)
+            foreach(var name in tableNames)
             {
-                viewModel = await LoadTable(dbclient, viewModel);
+                viewModel.tableName = name;
+                try
+                {
+                    viewModel = await LoadTable(dbclient, viewModel);
+                }
+                catch(Exception ex)
+                {
+                    Console.WriteLine("Exception Found for {0}! {1}", name, ex);
+                    viewModel.tableName = null;
+                    ViewBag.Message = "No table for S3 bucket found!";
+                }
+                
             }
+
 
             return View(viewModel);
         }  
-        public async Task<IActionResult> uploadObject (IFormFile file, bool encryptionEnabled = false)
+        public async Task<IActionResult> uploadObject (IFormFile file,  S3ManagerViewModel viewModel, bool encryptionEnabled = false)
         {
-            Console.WriteLine(encryptionEnabled);
+            
             using (var client = new AmazonS3Client(s3config.accesskey, s3config.secretkey, s3config.bucketRegion))
             {
                 
@@ -80,6 +92,8 @@ namespace s3_example.Controllers
                         
                     await client.PutObjectAsync(putObj);
                 }
+                if(viewModel.Objects == null)
+                {} 
             }
             return RedirectToAction(nameof(s3Manager));
         }
@@ -227,7 +241,7 @@ namespace s3_example.Controllers
             return RedirectToAction(nameof(s3Manager));
         }
         
-        public async Task<string> GetTableName(AmazonDynamoDBClient client)
+        public async Task<List<string>> GetTableNames(AmazonDynamoDBClient client)
         {
 
             Console.WriteLine("\n*** listing tables ***");
@@ -245,44 +259,74 @@ namespace s3_example.Controllers
 
                 if (response.TableNames.Count() > 0)
                     lastTableNameEvaluated = response.TableNames[0];
-
-                Console.WriteLine("lastTableName: {0}",lastTableNameEvaluated);
-            return lastTableNameEvaluated;
+            return response.TableNames;
         }
         public async Task<S3ManagerViewModel> LoadTable(AmazonDynamoDBClient client, S3ManagerViewModel viewModel)
         {
         
             var table = Table.LoadTable(client, viewModel.tableName);
             
-            foreach (var item in viewModel.Objects)
-            {
-                Document document = await table.GetItemAsync(item.keyName);
-                if (document == null)
+            try{
+                foreach (var item in viewModel.Objects)
                 {
-                    Console.WriteLine("Error: product " + item.keyName + " does not exist");
-                    S3Obj obj = viewModel.Objects.Find(element => element.keyName == item.keyName);
-                    document = await uploadItem(table, obj);
+                    Document document = await table.GetItemAsync(item.keyName);
+                    if (document == null)
+                    {
+                        Console.WriteLine("Error: product " + item.keyName + " does not exist");
+                        S3Obj obj = viewModel.Objects.Find(element => element.keyName == item.keyName);
+                        document = await uploadItem(table, obj);
+                    }
+
+                    PrintDocument(document);
+                    
+                    S3DbInfo dbinfo = new S3DbInfo();
+                    dbinfo.keyName = document["ObjectKey"];
+                    dbinfo.imgUrl = document["ImgUrl"];
+                    dbinfo.extension = document["Extension"];
+                    dbinfo.size = document["Size"].AsInt();
+                    dbinfo.uploadDate = document["UploadDate"].AsDateTime();
+                    dbinfo.versions = document["Versions"].AsListOfString();
+
+                    item.Data = dbinfo;
                 }
-
-                PrintDocument(document);
-
             }
+            catch(Exception ex)
+            {
+                throw(ex);
+            }
+
             
             return viewModel;
         }
 
         public async Task<Document> uploadItem(Table table, S3Obj obj)
         {
+            Document document = null;
             Console.WriteLine("\n*** Executing uploadItem() ***");
-            var newobj = new Document();
-            newobj["ObjectKey"] = obj.keyName;
-            newobj["ImgUrl"] = obj.imgUrl;
-            newobj["Extension"] = Path.GetExtension(obj.keyName);
-            newobj["Size"] = obj.size;
-            newobj["UploadDate"] = obj.uploadDate;
- 
-            await table.PutItemAsync(newobj);
-            Document document = await table.GetItemAsync(obj.keyName);
+            try{
+                List<string> vers = new List<string>();
+                
+                foreach(var version in obj.versions)
+                {
+                    vers.Add(version.VersionId);
+                }
+
+                var newobj = new Document();
+                newobj["ObjectKey"] = obj.keyName;
+                newobj["ImgUrl"] = obj.imgUrl;
+                newobj["Extension"] = Path.GetExtension(obj.keyName);
+                newobj["Size"] = obj.size;
+                newobj["UploadDate"] = obj.uploadDate;
+                newobj["Versions"] = vers;
+                
+    
+                await table.PutItemAsync(newobj);
+                document = await table.GetItemAsync(obj.keyName);
+            }
+            catch(Exception ex)
+            {
+                throw(ex);
+            }
             return document;
         }
         private async void WaitUntilTableReady(AmazonDynamoDBClient client, string tableName)
