@@ -23,6 +23,7 @@
             </div>
         </div>
     </div>
+
     <div class="row" style=" margin-top:20px; margin-bottom:50px;">
         <div class="col-sm-12">
             <div class="card" style="height: 100%;">
@@ -50,8 +51,26 @@
             </div>
         </div>
     </div>
- 
-
+    @if(Model.tableName == null)
+    {
+    <div class="row" style=" margin-top:20px; margin-bottom:50px;">
+        <div class="col-sm-12">
+            <div class="card" style="height: 100%;">
+                <div class="card-body">
+                    <h5 class="card-title">Table Creator</h5>
+                    <p class="card-text">You need to create a table to store object data.</p>
+                    <p class="card-text">Enter Table Name</p>
+                    <form method="post" asp-action="CreateTable" asp-controller="Home" class="form-inline">
+                        <div class="input-group mb-3">
+                            <input type="text" class="form-control" name="tableName" placeholder="S3Manager">
+                        </div>
+                        <button type="submit" class="btn btn-primary mb-2">Create Table</button>
+                    </form>
+                </div>
+            </div>
+        </div>
+    </div>
+    }
 
     <div class="row align-items-center">
         <h4>Bucket Objects</h4>
@@ -61,6 +80,7 @@
                     <th scope="col">Image</th>
                     <th scope="col">File Name</th>
                     <th scope="col">Versions</th>
+                    <th scope="col">Stored Data</th>
                     <th scope="col">Delete</th>
                 </tr>
             </thead>
@@ -90,6 +110,24 @@
                             </ul>
 
                         </td>
+                        <td  style="vertical-align: middle;">
+                            @if (Model.tableName != null)
+                            {
+                                
+                                @if(item.Data != null)
+                                {
+                                   <p>yes deytaaaa;</p>
+                                }
+                                else
+                                {
+                                    <p>no deytaaaaa</p>
+                                }
+                            }
+                            else
+                           {
+                               <p>No data stored. Create DynamoDB Table.</p>
+                           } 
+                        </td>
                         <td>
                             <form asp-action="deleteObject" asp-route-id="@item.keyName" method="post">
                                 <button type="submit" class="btn btn-sm btn-danger" onclick="return confirm('Are you sure you want to delete @item.keyName?');">
@@ -100,6 +138,9 @@
                     </tr>
                                     
                 }
+                <br/>
+                <br/>
+  
             </tbody>
         </table>
     </div>

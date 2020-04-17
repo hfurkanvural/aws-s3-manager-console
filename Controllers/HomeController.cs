@@ -6,12 +6,14 @@ using System.IO;
 using System.Threading.Tasks;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
-using Microsoft.Extensions.Logging;
 using Amazon;  
 using Amazon.Runtime;  
 using Amazon.S3;  
 using Amazon.S3.Model;  
 using Amazon.S3.Transfer; 
+using Amazon.DynamoDBv2;
+using Amazon.DynamoDBv2.Model;
+using Amazon.DynamoDBv2.DocumentModel;
 using Microsoft.Extensions.Configuration;
 using s3_example.Models;
 
@@ -46,8 +48,14 @@ namespace s3_example.Controllers
                 viewModel.Objects = await GetS3Objects(client);
                 viewModel.VersioningStatus = await RetrieveBucketVersioningConfiguration(client);
             }
-
+            AmazonDynamoDBClient dbclient = new AmazonDynamoDBClient(s3config.accesskey, s3config.secretkey, s3config.bucketRegion);
+            viewModel.tableName = await GetTableName(dbclient);
             
+            if (viewModel.tableName != null)
+            {
+                viewModel = await LoadTable(dbclient, viewModel);
+            }
+
             return View(viewModel);
         }  
         public async Task<IActionResult> uploadObject (IFormFile file, bool encryptionEnabled = false)
@@ -148,6 +156,8 @@ namespace s3_example.Controllers
                 S3Obj tempObj = new S3Obj();
                 tempObj.keyName= entry.Key;
                 tempObj.imgUrl= s3config.url + entry.Key;
+                tempObj.size = entry.Size;
+                tempObj.uploadDate = entry.LastModified;
                 tempObj.versions = versions.FindAll(element => element.Key.Equals(entry.Key));
                 Objects.Add(tempObj);
             }
@@ -164,11 +174,169 @@ namespace s3_example.Controllers
             ListVersionsResponse response = await client.ListVersionsAsync(request); 
             return response.Versions;
         }
+        public async Task<IActionResult> CreateTable(string tableName)
+        {
+            Console.Write("\n\n\n\n\n***************");
+            Console.Write(tableName);
+            Console.Write("\n\n\n\n\n***************");
+            AmazonDynamoDBClient client =  new AmazonDynamoDBClient(s3config.accesskey, s3config.secretkey, s3config.bucketRegion);
+            //string tableName = "TestTable";
+
+            var response = await client.CreateTableAsync(new CreateTableRequest
+            {
+                TableName = tableName,
+                AttributeDefinitions = new List<AttributeDefinition>()
+                              {
+                                  new AttributeDefinition
+                                  {
+                                      AttributeName = "ObjectKey",
+                                      AttributeType = "S"
+                                  }
+                              },
+                KeySchema = new List<KeySchemaElement>()
+                              {
+                                  new KeySchemaElement
+                                  {
+                                      AttributeName = "ObjectKey",
+                                      KeyType = "HASH"
+                                  }
+                              },
+                ProvisionedThroughput = new ProvisionedThroughput
+                {
+                    ReadCapacityUnits = 5,
+                    WriteCapacityUnits = 5
+                }
+            });
+            var tableDescription = response.TableDescription;
+
+            string status = tableDescription.TableStatus;
+
+            Console.WriteLine(tableName + " - " + status);
+
+
+                    var res = await client.DescribeTableAsync(new DescribeTableRequest
+                    {
+                        TableName = tableName
+                    });
+                    Console.WriteLine("Table name: {0}, status: {1}", res.Table.TableName,
+                              res.Table.TableStatus);
+                    status = res.Table.TableStatus;
+      
+            WaitUntilTableReady(client, tableName);
+
+            return RedirectToAction(nameof(s3Manager));
+        }
+        
+        public async Task<string> GetTableName(AmazonDynamoDBClient client)
+        {
+
+            Console.WriteLine("\n*** listing tables ***");
+            string lastTableNameEvaluated = null;
+
+                var request = new ListTablesRequest
+                {
+                    Limit = 2,
+                    ExclusiveStartTableName = lastTableNameEvaluated
+                };
+
+                var response = await client.ListTablesAsync(request);
+                foreach (string name in response.TableNames)
+                    Console.WriteLine(name);
+
+                if (response.TableNames.Count() > 0)
+                    lastTableNameEvaluated = response.TableNames[0];
+
+                Console.WriteLine("lastTableName: {0}",lastTableNameEvaluated);
+            return lastTableNameEvaluated;
+        }
+        public async Task<S3ManagerViewModel> LoadTable(AmazonDynamoDBClient client, S3ManagerViewModel viewModel)
+        {
+        
+            var table = Table.LoadTable(client, viewModel.tableName);
+            
+            foreach (var item in viewModel.Objects)
+            {
+                Document document = await table.GetItemAsync(item.keyName);
+                if (document == null)
+                {
+                    Console.WriteLine("Error: product " + item.keyName + " does not exist");
+                    S3Obj obj = viewModel.Objects.Find(element => element.keyName == item.keyName);
+                    document = await uploadItem(table, obj);
+                }
+
+                PrintDocument(document);
+
+            }
+            
+            return viewModel;
+        }
+
+        public async Task<Document> uploadItem(Table table, S3Obj obj)
+        {
+            Console.WriteLine("\n*** Executing uploadItem() ***");
+            var newobj = new Document();
+            newobj["ObjectKey"] = obj.keyName;
+            newobj["ImgUrl"] = obj.imgUrl;
+            newobj["Extension"] = Path.GetExtension(obj.keyName);
+            newobj["Size"] = obj.size;
+            newobj["UploadDate"] = obj.uploadDate;
+ 
+            await table.PutItemAsync(newobj);
+            Document document = await table.GetItemAsync(obj.keyName);
+            return document;
+        }
+        private async void WaitUntilTableReady(AmazonDynamoDBClient client, string tableName)
+        {
+            string status = null;
+            // Let us wait until table is created. Call DescribeTable.
+            do
+            {
+                System.Threading.Thread.Sleep(5000); // Wait 5 seconds.
+                try
+                {
+                    var res =await client.DescribeTableAsync(new DescribeTableRequest
+                    {
+                        TableName = tableName
+                    });
+
+                    Console.WriteLine("Table name: {0}, status: {1}",
+                              res.Table.TableName,
+                              res.Table.TableStatus);
+                    status = res.Table.TableStatus;
+                }
+                catch (ResourceNotFoundException)
+                {
+                    // DescribeTable is eventually consistent. So you might
+                    // get resource not found. So we handle the potential exception.
+                }
+            } while (status != "ACTIVE");
+        }
+
+
+        private static void PrintDocument(Document document)
+        {
+            //   count++;
+            Console.WriteLine();
+            foreach (var attribute in document.GetAttributeNames())
+            {
+                string stringValue = null;
+                var value = document[attribute];
+                if (value is Primitive)
+                    stringValue = value.AsPrimitive().Value.ToString();
+                else if (value is PrimitiveList)
+                    stringValue = string.Join(",", (from primitive
+                                    in value.AsPrimitiveList().Entries
+                                                    select primitive.Value).ToArray());
+                Console.WriteLine("{0} - {1}", attribute, stringValue);
+            }
+        }
 
         [ResponseCache(Duration = 0, Location = ResponseCacheLocation.None, NoStore = true)]
         public IActionResult Error()
         {
             return View(new ErrorViewModel { RequestId = Activity.Current?.Id ?? HttpContext.TraceIdentifier });
         }
+
+        
     }
 }
