@@ -24,6 +24,9 @@ namespace s3_example
         public void ConfigureServices(IServiceCollection services)
         {
             services.AddControllersWithViews();
+            services.AddControllers().AddNewtonsoftJson();
+            services.AddControllersWithViews().AddNewtonsoftJson();
+            services.AddRazorPages().AddNewtonsoftJson();
         }
 
         // This method gets called by the runtime. Use this method to configure the HTTP request pipeline.
@@ -45,7 +48,7 @@ namespace s3_example
             app.UseRouting();
 
             app.UseAuthorization();
-
+    
             app.UseEndpoints(endpoints =>
             {
                 endpoints.MapControllerRoute(
