@@ -25,7 +25,7 @@ namespace s3_example.Controllers
     {
         private IConfiguration config;
         private S3Config s3config;
-        public string url = "https://t5lqxq8wja.execute-api.eu-central-1.amazonaws.com/test"; 
+        public string url = s3Config.url;
         
         public HomeController(IConfiguration configuration)
         {
@@ -140,7 +140,7 @@ namespace s3_example.Controllers
                             foreach (string name in resp.body)
                             {
                                 var result = await httpClient.DeleteAsync(url+"?tableName="+name+"&objectKey="+id);
-                                Console.WriteLine(result);
+                               
                             }
                         }
                     }
@@ -217,7 +217,7 @@ namespace s3_example.Controllers
             ListVersionsRequest request = new ListVersionsRequest()
             {
                 BucketName = s3config.bucketName,
-                MaxKeys = 100
+                MaxKeys = 500
             };
             ListVersionsResponse response = await client.ListVersionsAsync(request); 
             return response.Versions;
