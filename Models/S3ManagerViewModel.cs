@@ -7,7 +7,7 @@ namespace s3_example.Models
     public class S3ManagerViewModel
     {
         public string VersioningStatus { get; set; }
-        public string tableName {get; set;}
+
         public List<S3Obj> Objects {get; set;}
     }
 }

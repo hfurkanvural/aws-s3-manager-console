@@ -6,16 +6,18 @@ using System.IO;
 using System.Threading.Tasks;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.Extensions.Logging;
 using Amazon;  
 using Amazon.Runtime;  
 using Amazon.S3;  
 using Amazon.S3.Model;  
 using Amazon.S3.Transfer; 
-using Amazon.DynamoDBv2;
-using Amazon.DynamoDBv2.Model;
-using Amazon.DynamoDBv2.DocumentModel;
 using Microsoft.Extensions.Configuration;
 using s3_example.Models;
+using System.Net.Http;
+using Newtonsoft.Json.Linq;
+using Newtonsoft.Json;
+using System.Text;
 
 namespace s3_example.Controllers
 {
@@ -23,6 +25,7 @@ namespace s3_example.Controllers
     {
         private IConfiguration config;
         private S3Config s3config;
+        public string url = s3Config.url;
         
         public HomeController(IConfiguration configuration)
         {
@@ -48,32 +51,12 @@ namespace s3_example.Controllers
                 viewModel.Objects = await GetS3Objects(client);
                 viewModel.VersioningStatus = await RetrieveBucketVersioningConfiguration(client);
             }
-            AmazonDynamoDBClient dbclient = new AmazonDynamoDBClient(s3config.accesskey, s3config.secretkey, s3config.bucketRegion);
-            List<string> tableNames = await GetTableNames(dbclient);
+
             
-            foreach(var name in tableNames)
-            {
-                viewModel.tableName = name;
-                try
-                {
-                    viewModel = await LoadTable(dbclient, viewModel);
-                }
-                catch(Exception ex)
-                {
-                    Console.WriteLine("Exception Found for {0}! {1}", name, ex);
-                    viewModel.tableName = null;
-                    ViewBag.Message = "No table for S3 bucket found!";
-                }
-                
-            }
-
-
             return View(viewModel);
         }  
-        public async Task<IActionResult> uploadObject (IFormFile file,  string id, bool encryptionEnabled = false)
+        public async Task<IActionResult> uploadObject (IFormFile file, string tableName, bool encryptionEnabled = false)
         {
-            int idx = -1;
-            S3ManagerViewModel viewModel = new S3ManagerViewModel();
             using (var client = new AmazonS3Client(s3config.accesskey, s3config.secretkey, s3config.bucketRegion))
             {
                 
@@ -91,68 +74,47 @@ namespace s3_example.Controllers
                     if(encryptionEnabled)
                         putObj.ServerSideEncryptionMethod = ServerSideEncryptionMethod.AES256;
                         
-                    viewModel.Objects = await GetS3Objects(client);
-                    viewModel.VersioningStatus = await RetrieveBucketVersioningConfiguration(client);
-                    viewModel.tableName = id;
                     await client.PutObjectAsync(putObj);
-                    Console.WriteLine("\n\n\nTable name: {0} and {1}\n\n\n\n\n\n", viewModel.tableName, id);
-                    idx = viewModel.Objects.FindIndex(element => element.keyName == file.FileName);
-                    viewModel.Objects = await GetS3Objects(client);
+                    var objects = await GetS3Objects(client);
+                    S3Obj obj = objects.FindLast(element => element.keyName == file.FileName);
+                
+                    
+                    using (var httpClient = new HttpClient())
+                    {
+                        using (var response = await httpClient.GetAsync(url+"?tableName="+tableName+"&objectKey="+file.FileName))
+                        {
+                            string apiResponse = await response.Content.ReadAsStringAsync();
+                            dynamic resp = JObject.Parse(apiResponse);
+                            dynamic payload = new System.Dynamic.ExpandoObject();
+                            payload.s3Obj = new System.Dynamic.ExpandoObject();
+                            payload.s3Obj.key = obj.keyName;
+                            payload.s3Obj.imgUrl = obj.imgUrl;
+                            payload.s3Obj.size = obj.size;
+                            payload.s3Obj.extension = Path.GetExtension(obj.keyName);
+                            payload.s3Obj.uploadDate = obj.uploadDate.ToString();
+                            payload.s3Obj.versions = new List<string>();
+                            foreach(var version in obj.versions)
+                            {
+                                payload.s3Obj.versions.Add(version.VersionId);
+                            }
+                            payload.table_name = tableName;
+
+                            string strPayload = JsonConvert.SerializeObject(payload);
+                           
+                            if (resp.statusCode == 200)
+                            {
+                                HttpResponseMessage result = await httpClient.PutAsync(new Uri(url), new StringContent(strPayload, Encoding.UTF8, "application/json"));
+                            }
+                            else
+                            {
+                                HttpResponseMessage result = await httpClient.PostAsync(new Uri(url), new StringContent(strPayload, Encoding.UTF8, "application/json"));
+                            }
+                               
+                        }
+                        
+                    }
                 }
             }
-             
-            if(idx != -1 & viewModel.tableName != null)
-            {
-                S3Obj obj = viewModel.Objects[idx];
-                Console.WriteLine("Object is already defined! {0}", obj.keyName);
-                AmazonDynamoDBClient client =  new AmazonDynamoDBClient(s3config.accesskey, s3config.secretkey, s3config.bucketRegion);
-
-                List<string> vers = new List<string>();
-                foreach(var version in obj.versions)
-                    vers.Add(version.VersionId);
-
-                Dictionary<string, AttributeValue> key = new Dictionary<string, AttributeValue>
-                {
-                    { "ObjectKey", new AttributeValue { S = obj.keyName } }
-                };
-                 
-                Dictionary<string, AttributeValueUpdate> updates = new Dictionary<string, AttributeValueUpdate>();
-
-                updates["Size"] = new AttributeValueUpdate()
-                {
-                    Action = AttributeAction.PUT,
-                    Value = new AttributeValue { N = obj.size.ToString() }
-                };
-                                updates["Size"] = new AttributeValueUpdate()
-                {
-                    Action = AttributeAction.PUT,
-                    Value = new AttributeValue { N = obj.size.ToString() }
-                };
-
-                updates["UploadDate"] = new AttributeValueUpdate()
-                {
-                    Action = AttributeAction.PUT,
-                    Value = new AttributeValue { S =obj.uploadDate.ToString() }
-                };
-
-                updates["Versions"] = new AttributeValueUpdate()
-                {
-                    Action = AttributeAction.PUT,
-                    Value = new AttributeValue { SS = vers }
-                };
-                 
-                UpdateItemRequest req = new UpdateItemRequest
-                {
-                    TableName = viewModel.tableName,
-                    Key = key,
-                    AttributeUpdates = updates
-                };
-                
-                UpdateItemResponse resp = await client.UpdateItemAsync(req);
-
-                Console.WriteLine("response : {0} \nstatusCode: {1}", resp.ResponseMetadata, resp.HttpStatusCode);
-
-            } 
             return RedirectToAction(nameof(s3Manager));
         }
 
@@ -166,9 +128,23 @@ namespace s3_example.Controllers
                     BucketName = s3config.bucketName,
                     Key = id
                 };
-
-                Console.WriteLine("Deleting an object");
                 await client.DeleteObjectAsync(deleteObjectRequest);
+                using (var httpClient = new HttpClient())
+                {
+                    using (var response = await httpClient.GetAsync(url+"/gettables?objectKey="+id))
+                    {
+                        string apiResponse = await response.Content.ReadAsStringAsync();
+                        dynamic resp = JObject.Parse(apiResponse);
+                        if(resp.body.Count > 0)
+                        {
+                            foreach (string name in resp.body)
+                            {
+                                var result = await httpClient.DeleteAsync(url+"?tableName="+name+"&objectKey="+id);
+                               
+                            }
+                        }
+                    }
+                }
             }
 
             return RedirectToAction(nameof(s3Manager));
@@ -241,221 +217,10 @@ namespace s3_example.Controllers
             ListVersionsRequest request = new ListVersionsRequest()
             {
                 BucketName = s3config.bucketName,
-                MaxKeys = 100
+                MaxKeys = 500
             };
             ListVersionsResponse response = await client.ListVersionsAsync(request); 
             return response.Versions;
-        }
-        public async Task<IActionResult> CreateTable(string tableName)
-        {
-            AmazonDynamoDBClient client =  new AmazonDynamoDBClient(s3config.accesskey, s3config.secretkey, s3config.bucketRegion);
-            //string tableName = "TestTable";
-
-            var response = await client.CreateTableAsync(new CreateTableRequest
-            {
-                TableName = tableName,
-                AttributeDefinitions = new List<AttributeDefinition>()
-                              {
-                                  new AttributeDefinition
-                                  {
-                                      AttributeName = "ObjectKey",
-                                      AttributeType = "S"
-                                  }
-                              },
-                KeySchema = new List<KeySchemaElement>()
-                              {
-                                  new KeySchemaElement
-                                  {
-                                      AttributeName = "ObjectKey",
-                                      KeyType = "HASH"
-                                  }
-                              },
-                ProvisionedThroughput = new ProvisionedThroughput
-                {
-                    ReadCapacityUnits = 5,
-                    WriteCapacityUnits = 5
-                }
-            });
-            var tableDescription = response.TableDescription;
-
-            string status = tableDescription.TableStatus;
-
-            Console.WriteLine(tableName + " - " + status);
-
-
-                    var res = await client.DescribeTableAsync(new DescribeTableRequest
-                    {
-                        TableName = tableName
-                    });
-                    Console.WriteLine("Table name: {0}, status: {1}", res.Table.TableName,
-                              res.Table.TableStatus);
-                    status = res.Table.TableStatus;
-      
-            WaitUntilTableReady(client, tableName);
-
-            return RedirectToAction(nameof(s3Manager));
-        }
-
-        public async Task<IActionResult> DeleteTable(string id)
-        {
-
-            AmazonDynamoDBClient client =  new AmazonDynamoDBClient(s3config.accesskey, s3config.secretkey, s3config.bucketRegion);
-            DeleteTableRequest request = new DeleteTableRequest
-            {
-                TableName = id
-            };
-
-            var response = await client.DeleteTableAsync(request);
-            
-            var tableDescription = response.TableDescription;
-
-            string status = tableDescription.TableStatus;
-
-            Console.WriteLine(id + " - " + status);
-
-            var res = await client.DescribeTableAsync(new DescribeTableRequest
-            {
-                TableName = id
-            });
-            Console.WriteLine("Table name: {0}, status: {1}", res.Table.TableName,
-                      res.Table.TableStatus);
-            status = res.Table.TableStatus;
-      
-            WaitUntilTableReady(client, id);
-
-            return RedirectToAction(nameof(s3Manager));
-        }
-        
-        public async Task<List<string>> GetTableNames(AmazonDynamoDBClient client)
-        {
-
-            Console.WriteLine("\n*** listing tables ***");
-            string lastTableNameEvaluated = null;
-
-                var request = new ListTablesRequest
-                {
-                    Limit = 2,
-                    ExclusiveStartTableName = lastTableNameEvaluated
-                };
-
-                var response = await client.ListTablesAsync(request);
-                foreach (string name in response.TableNames)
-                    Console.WriteLine(name);
-
-                if (response.TableNames.Count() > 0)
-                    lastTableNameEvaluated = response.TableNames[0];
-            return response.TableNames;
-        }
-        public async Task<S3ManagerViewModel> LoadTable(AmazonDynamoDBClient client, S3ManagerViewModel viewModel)
-        {
-        
-            var table = Table.LoadTable(client, viewModel.tableName);
-            
-            try{
-                foreach (var item in viewModel.Objects)
-                {
-                    Document document = await table.GetItemAsync(item.keyName);
-                    if (document == null)
-                    {
-                        Console.WriteLine("product " + item.keyName + " does not exist");
-                        S3Obj obj = viewModel.Objects.Find(element => element.keyName == item.keyName);
-                        document = await uploadItem(table, obj);
-                    }
-                    
-                    S3DbInfo dbinfo = new S3DbInfo();
-                    dbinfo.keyName = document["ObjectKey"];
-                    dbinfo.imgUrl = document["ImgUrl"];
-                    dbinfo.extension = document["Extension"];
-                    dbinfo.size = document["Size"].AsInt();
-                    dbinfo.uploadDate = document["UploadDate"];
-                    dbinfo.versions = document["Versions"].AsListOfString();
-
-                    item.Data = dbinfo;
-                }
-            }
-            catch(Exception ex)
-            {
-                throw(ex);
-            }
-
-            
-            return viewModel;
-        }
-
-        public async Task<Document> uploadItem(Table table, S3Obj obj)
-        {
-            Document document = null;
-            Console.WriteLine("\n*** Executing uploadItem() ***");
-            try{
-                List<string> vers = new List<string>();
-                
-                foreach(var version in obj.versions)
-                {
-                    vers.Add(version.VersionId);
-                }
-
-                var newobj = new Document();
-                newobj["ObjectKey"] = obj.keyName;
-                newobj["ImgUrl"] = obj.imgUrl;
-                newobj["Extension"] = Path.GetExtension(obj.keyName);
-                newobj["Size"] = obj.size;
-                newobj["UploadDate"] = obj.uploadDate;
-                newobj["Versions"] = vers;
-                
-    
-                await table.PutItemAsync(newobj);
-                document = await table.GetItemAsync(obj.keyName);
-            }
-            catch(Exception ex)
-            {
-                throw(ex);
-            }
-            return document;
-        }
-        private async void WaitUntilTableReady(AmazonDynamoDBClient client, string tableName)
-        {
-            string status = null;
-            // Let us wait until table is created. Call DescribeTable.
-            do
-            {
-                System.Threading.Thread.Sleep(5000); // Wait 5 seconds.
-                try
-                {
-                    var res =await client.DescribeTableAsync(new DescribeTableRequest
-                    {
-                        TableName = tableName
-                    });
-
-                    Console.WriteLine("Table name: {0}, status: {1}",
-                              res.Table.TableName,
-                              res.Table.TableStatus);
-                    status = res.Table.TableStatus;
-                }
-                catch (ResourceNotFoundException)
-                {
-                    // DescribeTable is eventually consistent. So you might
-                    // get resource not found. So we handle the potential exception.
-                }
-            } while (status != "ACTIVE");
-        }
-
-
-        private static void PrintDocument(Document document)
-        {
-            //   count++;
-            Console.WriteLine();
-            foreach (var attribute in document.GetAttributeNames())
-            {
-                string stringValue = null;
-                var value = document[attribute];
-                if (value is Primitive)
-                    stringValue = value.AsPrimitive().Value.ToString();
-                else if (value is PrimitiveList)
-                    stringValue = string.Join(",", (from primitive
-                                    in value.AsPrimitiveList().Entries
-                                                    select primitive.Value).ToArray());
-                Console.WriteLine("{0} - {1}", attribute, stringValue);
-            }
         }
 
         [ResponseCache(Duration = 0, Location = ResponseCacheLocation.None, NoStore = true)]
@@ -463,7 +228,5 @@ namespace s3_example.Controllers
         {
             return View(new ErrorViewModel { RequestId = Activity.Current?.Id ?? HttpContext.TraceIdentifier });
         }
-
-        
     }
 }
