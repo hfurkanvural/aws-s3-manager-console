@@ -11,6 +11,9 @@ dotnet run
 ```
 App will run on `localhost:5001`. 
 
+## Change log
+
+S3 operations has changed with lambda functions. Functions will be added.
 
 ![Welcome Page](https://github.com/hfurkanvural/aws-s3-manager-console/indexScreen.png)
 
